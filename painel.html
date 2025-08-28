@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Gestão - Pastel na Mão</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.23/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        :root { --cor-primaria: #FFC107; --cor-escura: #212529; --cor-clara: #ffffff; --cor-fundo: #f8f9fa; --sombra: 0 4px 12px rgba(0,0,0,0.06); }
+        body { font-family: 'Inter', sans-serif; background-color: var(--cor-fundo); color: var(--cor-escura); margin: 0; padding: 15px; }
+        .container { max-width: 1200px; margin: auto; }
+        .main-header { display: flex; align-items: center; justify-content: center; gap: 20px; margin-bottom: 30px; }
+        .logo { height: 250px; }
+        h1, h2 { font-weight: 700; }
+        .main-layout { display: grid; grid-template-columns: 1fr; gap: 25px; }
+        @media (min-width: 900px) { .main-layout { grid-template-columns: 1fr 1.5fr; } }
+        .card { background: var(--cor-clara); padding: 25px; border-radius: 12px; box-shadow: var(--sombra); margin-bottom: 25px; }
+        h2 { margin-top: 0; border-bottom: 2px solid var(--cor-primaria); padding-bottom: 10px; font-size: 1.2rem; }
+        input, select, textarea { width: 100%; margin-bottom: 15px; box-sizing: border-box; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; }
+        .form-buttons { display: flex; gap: 10px; margin-top: 10px; }
+        .btn { border: none; font-weight: 700; cursor: pointer; padding: 12px; border-radius: 6px; flex: 1; transition: opacity 0.2s; }
+        .btn-principal { background-color: var(--cor-escura); color: #fff; }
+        .btn-secundario { background-color: #e9ecef; color: #333; }
+        .produto-item { display: flex; align-items: center; gap: 15px; padding: 10px 0; border-bottom: 1px solid #eee; }
+        .produto-item img { width: 80px; height: 60px; object-fit: cover; border-radius: 6px; }
+        .produto-info { flex-grow: 1; }
+        .produto-acoes button { background: none; border: 1px solid #ddd; color: #555; cursor: pointer; padding: 8px; margin-left: 5px; border-radius: 4px; }
+        .detalhe-venda { border-left: 3px solid var(--cor-primaria); padding-left: 10px; margin-top: 10px; font-size: 0.9rem; }
+        #clear-products-btn { background-color: #dc3545; color: white; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="main-header">
+            <img src="logo.png" alt="Logo Pastel na Mão" class="logo" id="logo-header">
+            <h1>GESTÃO</h1>
+        </header>
+        <main class="main-layout">
+            <div class="coluna-principal">
+                <section class="card" id="form-card">
+                    <h2 id="form-title"><i class="fas fa-plus-circle"></i> Cadastrar Produto</h2>
+                    <form id="form-produto">
+                        <input type="hidden" id="produto-id">
+                        <input type="text" id="produto-nome" placeholder="Nome do Produto" required>
+                        <select id="produto-categoria" required>
+                            <option value="" disabled selected>Categoria</option>
+                            <option value="Salgados">Salgados</option>
+                            <option value="Doces">Doces</option>
+                            <option value="Bebidas">Bebidas</option>
+                            <option value="Diversos">Diversos</option>
+                        </select>
+                        <textarea id="produto-descricao" placeholder="Descrição curta" rows="3"></textarea>
+                        <input type="number" id="produto-preco" placeholder="Preço (Ex: 9.90)" step="0.01" required>
+                        <label for="produto-imagem">Imagem</label>
+                        <input type="file" id="produto-imagem" accept="image/*">
+                        <div class="form-buttons">
+                            <button type="submit" class="btn btn-principal">Salvar</button>
+                            <button type="button" id="btn-cancelar" class="btn btn-secundario" style="display: none;">Cancelar</button>
+                        </div>
+                    </form>
+                </section>
+                <section class="card">
+                    <h2><i class="fas fa-chart-line"></i> Relatório de Vendas do Dia</h2>
+                    <div id="relatorio-container">
+                        <p>Clique em "Gerar" para ver as vendas de hoje.</p>
+                    </div>
+                    <div class="form-buttons">
+                        <button id="btn-gerar-relatorio" class="btn btn-secundario">Gerar Relatório</button>
+                        <button id="btn-salvar-pdf" class="btn btn-principal" style="display: none;">Salvar em PDF</button>
+                    </div>
+                </section>
+            </div>
+            <div class="coluna-secundaria">
+                <section class="card">
+                    <h2><i class="fas fa-clipboard-list"></i> Cardápio Atual</h2>
+                    <div id="lista-produtos"></div>
+                    <button id="clear-products-btn" class="btn btn-principal">Apagar Todos os Produtos</button>
+                </section>
+            </div>
+        </main>
+    </div>
+    <script>
+        const AdminApp = {
+            state: { produtos: [], vendas: [], vendasDoDia: [] },
+            
+            init() {
+                this.cacheDOMElements();
+                this.bindEvents();
+                this.loadFromLocalStorage();
+                this.renderProdutos();
+                this.switchToAddMode();
+            },
+            cacheDOMElements() {
+                this.form = document.getElementById('form-produto');
+                this.formTitle = document.getElementById('form-title');
+                this.productListDiv = document.getElementById('lista-produtos');
+                this.idInput = document.getElementById('produto-id');
+                this.logoHeader = document.getElementById('logo-header');
+            },
+            bindEvents() {
+                this.form.addEventListener('submit', this.handleFormSubmit.bind(this));
+                document.addEventListener('click', this.handleDelegatedClick.bind(this));
+            },
+            loadFromLocalStorage() {
+                try {
+                    const p = localStorage.getItem('produtos_pastelaria');
+                    this.state.produtos = p ? JSON.parse(p) : [];
+                    const v = localStorage.getItem('vendas_pastelaria');
+                    this.state.vendas = v ? JSON.parse(v) : [];
+                } catch (e) {
+                    localStorage.clear();
+                }
+            },
+            saveProdutos() {
+                localStorage.setItem('produtos_pastelaria', JSON.stringify(this.state.produtos));
+            },
+            toBase64: file => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            }),
+            renderProdutos() {
+                this.productListDiv.innerHTML = this.state.produtos.length === 0 ? '<p>Nenhum produto cadastrado.</p>' : this.state.produtos.map(p => `<div class="produto-item" data-id="${p.id}"><img src="${p.imagem}" alt="${p.nome}"><div class="produto-info"><strong>${p.nome}</strong><br><span>R$ ${p.preco.toFixed(2).replace('.', ',')}</span></div><div class="produto-acoes"><button class="edit-btn"><i class="fas fa-pencil-alt"></i></button><button class="delete-btn"><i class="fas fa-trash"></i></button></div></div>`).join('');
+            },
+            switchToAddMode() {
+                this.form.reset();
+                this.idInput.value = '';
+                document.getElementById('btn-cancelar').style.display = 'none';
+                this.formTitle.innerHTML = '<i class="fas fa-plus-circle"></i> Cadastrar Produto';
+            },
+            switchToEditMode(produto) {
+                this.formTitle.innerHTML = '<i class="fas fa-pencil-alt"></i> Editando Produto';
+                this.idInput.value = produto.id;
+                document.getElementById('produto-nome').value = produto.nome;
+                document.getElementById('produto-categoria').value = produto.categoria;
+                document.getElementById('produto-descricao').value = produto.descricao;
+                document.getElementById('produto-preco').value = produto.preco;
+                document.getElementById('btn-cancelar').style.display = 'block';
+            },
+            async handleFormSubmit(e) {
+                e.preventDefault();
+                const id = this.idInput.value;
+                const imageFile = document.getElementById('produto-imagem').files[0];
+                let imageBase64 = null;
+                if (imageFile) {
+                    imageBase64 = await this.toBase64(imageFile);
+                }
+                
+                if (id) {
+                    const produto = this.state.produtos.find(p => p.id == id);
+                    if(produto) {
+                        produto.nome = document.getElementById('produto-nome').value;
+                        produto.categoria = document.getElementById('produto-categoria').value;
+                        produto.descricao = document.getElementById('produto-descricao').value;
+                        produto.preco = parseFloat(document.getElementById('produto-preco').value);
+                        if (imageBase64) produto.imagem = imageBase64;
+                    }
+                } else {
+                    if (!imageFile) {
+                        alert('A imagem é obrigatória.');
+                        return;
+                    }
+                    this.state.produtos.push({
+                        id: Date.now(),
+                        nome: document.getElementById('produto-nome').value,
+                        categoria: document.getElementById('produto-categoria').value,
+                        descricao: document.getElementById('produto-descricao').value,
+                        preco: parseFloat(document.getElementById('produto-preco').value),
+                        imagem: imageBase64
+                    });
+                }
+                this.saveProdutos();
+                this.renderProdutos();
+                this.switchToAddMode();
+            },
+            handleDelegatedClick(e) {
+                const button = e.target.closest('button');
+                if (!button) return;
+                
+                if (button.classList.contains('edit-btn')) {
+                    const id = button.closest('.produto-item').dataset.id;
+                    const produto = this.state.produtos.find(p => p.id == id);
+                    if(produto) this.switchToEditMode(produto);
+                } else if (button.classList.contains('delete-btn')) {
+                    const id = button.closest('.produto-item').dataset.id;
+                    if (confirm('Tem certeza?')) {
+                        this.state.produtos = this.state.produtos.filter(p => p.id != id);
+                        this.saveProdutos();
+                        this.renderProdutos();
+                    }
+                } else if (button.id === 'btn-cancelar') {
+                    this.switchToAddMode();
+                } else if (button.id === 'btn-gerar-relatorio') {
+                    this.gerarRelatorioDia();
+                } else if (button.id === 'btn-salvar-pdf') {
+                    this.salvarRelatorioPDF();
+                } else if (button.id === 'clear-products-btn') {
+                    if (confirm('ATENÇÃO: Isso apagará TODOS os produtos. Deseja continuar?')) {
+                        this.state.produtos = [];
+                        this.saveProdutos();
+                        this.renderProdutos();
+                        alert('Todos os produtos foram apagados.');
+                    }
+                }
+            },
+            gerarRelatorioDia() {
+                this.loadFromLocalStorage();
+                const agora = new Date();
+                this.state.vendasDoDia = this.state.vendas.filter(v => {
+                    const vendaData = new Date(v.data);
+                    return vendaData.toDateString() === agora.toDateString();
+                });
+                
+                const container = document.getElementById('relatorio-container');
+                const savePdfBtn = document.getElementById('btn-salvar-pdf');
+                
+                if (this.state.vendasDoDia.length === 0) {
+                    container.innerHTML = `<p>Nenhuma venda hoje (${agora.toLocaleDateString()}).</p>`;
+                    savePdfBtn.style.display = 'none';
+                    return;
+                }
+                
+                const total = this.state.vendasDoDia.reduce((sum, v) => sum + v.total, 0);
+                let html = `<p><strong>Faturamento:</strong> R$ ${total.toFixed(2).replace('.', ',')} | <strong>Pedidos:</strong> ${this.state.vendasDoDia.length}</p><h4>Detalhes:</h4>`;
+                this.state.vendasDoDia.forEach(venda => {
+                    const itensList = venda.itens.map(item => `<li>${item.qtd}x ${item.nome} (R$ ${(item.qtd * item.preco).toFixed(2).replace('.', ',')})</li>`).join('');
+                    html += `<div class="detalhe-venda"><strong>Cliente:</strong> ${venda.cliente.nome}<br><strong>Contato:</strong> ${venda.cliente.contato}<br><strong>Endereço:</strong> ${venda.cliente.endereco}<br><strong>Itens:</strong><ul>${itensList}</ul><strong>Total:</strong> R$ ${venda.total.toFixed(2).replace('.',',')}</div>`;
+                });
+                container.innerHTML = html;
+                savePdfBtn.style.display = 'block';
+            },
+            salvarRelatorioPDF() {
+                if(!this.state.vendasDoDia || this.state.vendasDoDia.length === 0) return;
+                
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                doc.setFontSize(18);
+                doc.text(`Relatório de Vendas - ${new Date().toLocaleDateString()}`, 14, 22);
+                
+                const tableColumn = ["Cliente", "Contato", "Endereço", "Itens", "Total (R$)"];
+                const tableRows = [];
+                
+                this.state.vendasDoDia.forEach(venda => {
+                    const itensStr = venda.itens.map(item => `${item.qtd}x ${item.nome}`).join(", ");
+                    tableRows.push([venda.cliente.nome, venda.cliente.contato, venda.cliente.endereco, itensStr, venda.total.toFixed(2)]);
+                });
+                
+                doc.autoTable({
+                    head: [tableColumn],
+                    body: tableRows,
+                    startY: 30
+                });
+                
+                doc.save(`relatorio_${new Date().toLocaleDateString().replace(/\//g, '-')}.pdf`);
+            }
+        };
+        document.addEventListener('DOMContentLoaded', () => AdminApp.init());
+    </script>
+</body>
+</html>
